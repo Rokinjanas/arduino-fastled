@@ -1,19 +1,20 @@
 #include <FastLED.h>
-#include <Button.h>
+
 const int sampleWindow = 50; // Sample window width in mS (50 mS = 20Hz)
 unsigned int sample;
 #define DATA_PIN    3
 //#define CLK_PIN   4
 #define LED_TYPE    WS2811
 #define COLOR_ORDER BRG //GRB
-#define NUM_LEDS    80
-
+#define NUM_LEDS    100
+#define ChangeTime 60
 CRGB leds[NUM_LEDS];
 int randColor = random(0,100);
 #define BRIGHTNESS          50
 #define FRAMES_PER_SECOND  120
 
 uint8_t gHue = 0;
+uint8_t gCurrentPatternNumber = 0;
 
 void setup() 
 { 
@@ -30,18 +31,16 @@ void setup()
 }
 
 // STATE MACHINE
-int state = 1;
+volatile boolean state = true;
 void toggleState() {
-  switch(state){
-    case 0: {
-      state = 1;
-    }
-    case 1: {
-      state = 0;
-    }
-  }
+  state = !state; 
 }
- 
+
+// List of patterns to cycle through.  Each is defined as a separate function below.
+typedef void (*SimplePatternList[])();
+SimplePatternList gPatterns = { rainbow, rainbowWithGlitter, confetti, sinelon, juggle, bpm };
+
+
 void loop() 
 {
    
@@ -72,6 +71,7 @@ void loop()
    
    //Serial.println(volts*100);
    //Serial.println(sample);
+   Serial.println(state);
    EVERY_N_MILLISECONDS( 1000 ) { 
     randColor = random(128,255); 
     //randColor = random8();
@@ -81,15 +81,18 @@ void loop()
     // 192 - 255  PURPLE - PINK - RED
    }
    EVERY_N_MILLISECONDS(20) { gHue++;};
-   
-   switch(state){
-    case 0: {
-      fill_rainbow(leds, NUM_LEDS, gHue, 7);
+   EVERY_N_SECONDS( ChangeTime ) { 
+    if(state){
+      nextPattern();  
     }
-    case 1: {
+   } // change patterns periodically
+
+
+   if(state) gPatterns[gCurrentPatternNumber]();
+   if(!state) {
+      //fadeToBlackBy( leds, NUM_LEDS, 20);
       ledScaleFromMiddle(volts * 100);
     }
-   }
    
    //ledScaleFromMiddle(volts*100);
    FastLED.delay(5);
@@ -146,7 +149,78 @@ void ledScaleFromMiddle(int volts) {
   fadeTowardColor(leds, NUM_LEDS, bgColor, 50);
 
 }
+/* EFEKTAI */
+#define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
+
+void nextPattern()
+{
+  // add one to the current pattern number, and wrap around at the end
+  gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE( gPatterns);
+}
+
+void blank()
+{
+  fadeToBlackBy( leds, NUM_LEDS, 20); // This gives the goggles an "off" position
+}
+
+void rainbow() 
+{
+  // FastLED's built-in rainbow generator
+  fill_rainbow( leds, NUM_LEDS, gHue, 7);
+}
+
+void rainbowWithGlitter() 
+{
+  // built-in FastLED rainbow, plus some random sparkly glitter
+  rainbow();
+  addGlitter(80);
+}
+
+void addGlitter( fract8 chanceOfGlitter) 
+{
+  if( random8() < chanceOfGlitter) {
+    leds[ random16(NUM_LEDS) ] += CRGB::White;
+  }
+}
+
+void confetti() 
+{
+  // random colored speckles that blink in and fade smoothly
+  fadeToBlackBy( leds, NUM_LEDS, 10);
+  int pos = random16(NUM_LEDS);
+  leds[pos] += CHSV( gHue + random8(64), 200, 255);
+}
+
+void sinelon()
+{
+  // a colored dot sweeping back and forth, with fading trails
+  fadeToBlackBy( leds, NUM_LEDS, 20);
+  int pos = beatsin16(13,0,NUM_LEDS);
+  leds[pos] += CHSV( gHue, 255, 192);
+}
+
+void bpm()
+{
+  // colored stripes pulsing at a defined Beats-Per-Minute (BPM)
+  uint8_t BeatsPerMinute = 62;
+  CRGBPalette16 palette = PartyColors_p;
+  uint8_t beat = beatsin8( BeatsPerMinute, 64, 255);
+  for( int i = 0; i < NUM_LEDS; i++) { //9948
+    leds[i] = ColorFromPalette(palette, gHue+(i*2), beat-gHue+(i*10));
+  }
+}
+
+void juggle() {
+  // eight colored dots, weaving in and out of sync with each other
+  fadeToBlackBy( leds, NUM_LEDS, 20);
+  byte dothue = 0;
+  for( int i = 0; i < 8; i++) {
+    leds[beatsin16(i+7,0,NUM_LEDS)] |= CHSV(dothue, 200, 255);
+    dothue += 32;
+  }
+}
+/* !EFEKTAI */
 void nblendU8TowardU8( uint8_t& cur, const uint8_t target, uint8_t amount)
 {
   if( cur == target) return;
