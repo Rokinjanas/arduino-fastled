@@ -8,7 +8,7 @@ unsigned int sample;
 #define NUM_LEDS    80
 
 CRGB leds[NUM_LEDS];
-
+int randColor = random(0,100);
 #define BRIGHTNESS          100
 #define FRAMES_PER_SECOND  120
 
@@ -51,12 +51,20 @@ void loop()
    peakToPeak = signalMax - signalMin;  // max - min = peak-peak amplitude
    float volts = (peakToPeak * 5.0) / 1024;  // convert to volts
  
-   //Serial.println(volts);
+   Serial.println(volts*100);
+   Serial.println(sample);
+   EVERY_N_MILLISECONDS( 1000 ) { 
+    randColor = random(0,64); 
+    //randColor = random8();
+    // 0 - 64     RED - ORANGE - YELLOW
+    // 64 - 128   YELLOW - GREEN - AQUA
+    // 128 - 192  AQUA - BLUE - PURPLE
+    // 192 - 255  PURPLE - PINK - RED
+   }
    ledScaleFromMiddle(volts*100);
-   
-   FastLED.delay(10);
-   
+   //FastLED.delay(10);
 }
+
 
 /*void ledScale(int volts) {
   CRGB bgColor( 0, 0, 0);
@@ -84,7 +92,8 @@ void ledScaleFromMiddle(int volts) {
   int scale = (volts*middle)/maxVal;
   if(volts >= maxVal) scale = middle+3;
   if(scale < middle) {
-    CHSV randomColor (random8(),255,255);
+    CHSV randomColor (randColor,255,255);
+    int s = false;
       for(int i=0; i < scale; i++){
         for(int a=0;a<3;a++){
           leds[middle+a] = CRGB::Red;
@@ -92,7 +101,16 @@ void ledScaleFromMiddle(int volts) {
         }
         leds[middle+i+3] = randomColor;
         leds[middle-i-3] = randomColor;
+        if(s){
+          FastLED.show();
+          FastLED.delay(2);
+          s = false;
+        } else {
+          s = true;
+        }
+        //FastLED.show();
         //if(i == middle-1) leds[i] = CRGB::Red;
+        //FastLED.delay(1);
       }
   }
   fadeTowardColor(leds, NUM_LEDS, bgColor, 50);
