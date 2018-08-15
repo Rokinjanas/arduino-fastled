@@ -1,32 +1,51 @@
 #include <FastLED.h>
+#include <Button.h>
 const int sampleWindow = 50; // Sample window width in mS (50 mS = 20Hz)
 unsigned int sample;
 #define DATA_PIN    3
 //#define CLK_PIN   4
 #define LED_TYPE    WS2811
-#define COLOR_ORDER GRB
+#define COLOR_ORDER BRG //GRB
 #define NUM_LEDS    80
 
 CRGB leds[NUM_LEDS];
 int randColor = random(0,100);
-#define BRIGHTNESS          100
+#define BRIGHTNESS          50
 #define FRAMES_PER_SECOND  120
+
+uint8_t gHue = 0;
 
 void setup() 
 { 
   // tell FastLED about the LED strip configuration
   FastLED.addLeds<LED_TYPE,DATA_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
   //FastLED.addLeds<LED_TYPE,DATA_PIN,CLK_PIN,COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  
+  /* BUTTON */
+  attachInterrupt(0, toggleState, RISING);
 
   // set master brightness control
   FastLED.setBrightness(BRIGHTNESS);
    Serial.begin(9600);
 }
- 
+
+// STATE MACHINE
+int state = 1;
+void toggleState() {
+  switch(state){
+    case 0: {
+      state = 1;
+    }
+    case 1: {
+      state = 0;
+    }
+  }
+}
  
 void loop() 
 {
-   unsigned long startMillis= millis();  // Start of sample window
+   
+    unsigned long startMillis= millis();  // Start of sample window
    unsigned int peakToPeak = 0;   // peak-to-peak level
  
    unsigned int signalMax = 0;
@@ -50,19 +69,30 @@ void loop()
    }
    peakToPeak = signalMax - signalMin;  // max - min = peak-peak amplitude
    float volts = (peakToPeak * 5.0) / 1024;  // convert to volts
- 
-   Serial.println(volts*100);
-   Serial.println(sample);
+   
+   //Serial.println(volts*100);
+   //Serial.println(sample);
    EVERY_N_MILLISECONDS( 1000 ) { 
-    randColor = random(0,64); 
+    randColor = random(128,255); 
     //randColor = random8();
     // 0 - 64     RED - ORANGE - YELLOW
     // 64 - 128   YELLOW - GREEN - AQUA
     // 128 - 192  AQUA - BLUE - PURPLE
     // 192 - 255  PURPLE - PINK - RED
    }
-   ledScaleFromMiddle(volts*100);
-   //FastLED.delay(10);
+   EVERY_N_MILLISECONDS(20) { gHue++;};
+   
+   switch(state){
+    case 0: {
+      fill_rainbow(leds, NUM_LEDS, gHue, 7);
+    }
+    case 1: {
+      ledScaleFromMiddle(volts * 100);
+    }
+   }
+   
+   //ledScaleFromMiddle(volts*100);
+   FastLED.delay(5);
 }
 
 
@@ -87,7 +117,7 @@ void loop()
 
 void ledScaleFromMiddle(int volts) {
   CRGB bgColor( 0, 0, 0);
-  int maxVal = 20;
+  int maxVal = 25;
   int middle = NUM_LEDS/2;
   int scale = (volts*middle)/maxVal;
   if(volts >= maxVal) scale = middle+3;
@@ -95,15 +125,15 @@ void ledScaleFromMiddle(int volts) {
     CHSV randomColor (randColor,255,255);
     int s = false;
       for(int i=0; i < scale; i++){
-        for(int a=0;a<3;a++){
-          leds[middle+a] = CRGB::Red;
-          leds[middle-a] = CRGB::Red;
+        for(int a=0;a<4;a++){
+          leds[middle+a] = randomColor;
+          leds[middle-a] = randomColor;
         }
-        leds[middle+i+3] = randomColor;
-        leds[middle-i-3] = randomColor;
+        leds[middle+i+4] = randomColor;
+        leds[middle-i-4] = randomColor;
         if(s){
           FastLED.show();
-          FastLED.delay(2);
+          FastLED.delay(3);
           s = false;
         } else {
           s = true;
