@@ -6,15 +6,14 @@ unsigned int sample;
 //#define CLK_PIN   4
 #define LED_TYPE    WS2811
 #define COLOR_ORDER BRG //GRB
-#define NUM_LEDS    100
-#define ChangeTime 60
+#define NUM_LEDS    80
+#define ChangeTime 10
 CRGB leds[NUM_LEDS];
 int randColor = random(0,100);
 #define BRIGHTNESS          50
 #define FRAMES_PER_SECOND  120
 
-uint8_t gHue = 0;
-uint8_t gCurrentPatternNumber = 0;
+
 
 void setup() 
 { 
@@ -30,48 +29,37 @@ void setup()
    Serial.begin(9600);
 }
 
-// STATE MACHINE
-volatile boolean state = true;
+/////// STATE MACHINE
+//    0 - Off
+//    1 - Random patterns
+//    2 - Vocie reactive waves from middle
+//    3 - Vocie reactive dots (TODO)
+volatile int state = 1;
 void toggleState() {
-  state = !state; 
-}
+  if(state == 3) {
+    state = 0;
+  } else {
+    state++;
+  }
+} 
+//////! STATE MACHINE
+
 
 // List of patterns to cycle through.  Each is defined as a separate function below.
 typedef void (*SimplePatternList[])();
 SimplePatternList gPatterns = { rainbow, rainbowWithGlitter, confetti, sinelon, juggle, bpm };
 
+uint8_t gHue = 0;
+uint8_t gCurrentPatternNumber = 0;
+
+float volts = 0;
 
 void loop() 
 {
-   
-    unsigned long startMillis= millis();  // Start of sample window
-   unsigned int peakToPeak = 0;   // peak-to-peak level
- 
-   unsigned int signalMax = 0;
-   unsigned int signalMin = 1024;
- 
-   // collect data for 50 mS
-   while (millis() - startMillis < sampleWindow)
-   {
-      sample = analogRead(0);
-      if (sample < 1024)  // toss out spurious readings
-      {
-         if (sample > signalMax)
-         {
-            signalMax = sample;  // save just the max levels
-         }
-         else if (sample < signalMin)
-         {
-            signalMin = sample;  // save just the min levels
-         }
-      }
-   }
-   peakToPeak = signalMax - signalMin;  // max - min = peak-peak amplitude
-   float volts = (peakToPeak * 5.0) / 1024;  // convert to volts
-   
-   //Serial.println(volts*100);
-   //Serial.println(sample);
-   Serial.println(state);
+
+    
+   //Serial.println(volts);
+   ///////TIMERS
    EVERY_N_MILLISECONDS( 1000 ) { 
     randColor = random(128,255); 
     //randColor = random8();
@@ -86,69 +74,61 @@ void loop()
       nextPattern();  
     }
    } // change patterns periodically
-
-
-   if(state) gPatterns[gCurrentPatternNumber]();
-   if(!state) {
-      //fadeToBlackBy( leds, NUM_LEDS, 20);
+  float tmp = 0.00;
+   switch(state){
+    case 0:
+      fill_solid(leds, NUM_LEDS, CRGB::Black);
+      FastLED.delay(1000);
+      break;
+    case 1:
+      gPatterns[gCurrentPatternNumber]();
+      break;
+    case 2:
+      //if(abs(volts*100 - tmp) > 12) {
+       // randColor = random(128,255);
+       // tmp = volts*100;
+      //}
+      getMicrophoneInput();
       ledScaleFromMiddle(volts * 100);
-    }
+      break;
+
+    default:
+      delay(2000);
+      break;
+   }
+
    
-   //ledScaleFromMiddle(volts*100);
    FastLED.delay(5);
 }
 
 
-/*void ledScale(int volts) {
-  CRGB bgColor( 0, 0, 0);
-  int maxVal = 20;
-  
-  int scale = (volts*NUM_LEDS)/maxVal;
-  if(volts >= maxVal) scale = NUM_LEDS;
-  if(scale < NUM_LEDS) {
-    CHSV randomColor (random8(),255,255);
-    
-      for(int i=0; i < scale; i++){
-        leds[i] = randomColor;
-        if(i == scale-1) leds[i] = CRGB::Red;
-      }
-  }
-  fadeTowardColor(leds, NUM_LEDS, bgColor, 50);
-
-
-}*/
-
 void ledScaleFromMiddle(int volts) {
   CRGB bgColor( 0, 0, 0);
-  int maxVal = 25;
+  int maxVal = 20;
   int middle = NUM_LEDS/2;
   int scale = (volts*middle)/maxVal;
-  if(volts >= maxVal) scale = middle+3;
-  if(scale < middle) {
+  if(volts >= maxVal) scale = middle;
+  if(scale <= middle) {
     CHSV randomColor (randColor,255,255);
-    int s = false;
-      for(int i=0; i < scale; i++){
-        for(int a=0;a<4;a++){
-          leds[middle+a] = randomColor;
-          leds[middle-a] = randomColor;
-        }
-        leds[middle+i+4] = randomColor;
-        leds[middle-i-4] = randomColor;
+    bool s = false;
+      for(int i=1; i <= scale; i++){
+        leds[middle-i] = randomColor;
+        if(middle+i > NUM_LEDS-1 || middle-1 < 0) break;
+        //if(i == middle) i = middle-1;
+        leds[middle] = randomColor;
+        leds[middle+i] = randomColor;
         if(s){
-          FastLED.show();
-          FastLED.delay(3);
           s = false;
+          FastLED.show();
+          FastLED.delay(1);
         } else {
           s = true;
         }
-        //FastLED.show();
-        //if(i == middle-1) leds[i] = CRGB::Red;
-        //FastLED.delay(1);
       }
   }
   fadeTowardColor(leds, NUM_LEDS, bgColor, 50);
-
 }
+
 /* EFEKTAI */
 #define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
 
@@ -157,11 +137,6 @@ void nextPattern()
 {
   // add one to the current pattern number, and wrap around at the end
   gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE( gPatterns);
-}
-
-void blank()
-{
-  fadeToBlackBy( leds, NUM_LEDS, 20); // This gives the goggles an "off" position
 }
 
 void rainbow() 
@@ -255,3 +230,31 @@ void fadeTowardColor( CRGB* L, uint16_t N, const CRGB& bgColor, uint8_t fadeAmou
     fadeTowardColor( L[i], bgColor, fadeAmount);
   }
 }
+
+void getMicrophoneInput(){
+  unsigned long startMillis= millis();  // Start of sample window
+     unsigned int peakToPeak = 0;   // peak-to-peak level
+   
+     unsigned int signalMax = 0;
+     unsigned int signalMin = 1024;
+     
+     // collect data for 50 mS
+     while (millis() - startMillis < sampleWindow)
+     {
+        sample = analogRead(0);
+        if (sample < 1024)  // toss out spurious readings
+        {
+           if (sample > signalMax)
+           {
+              signalMax = sample;  // save just the max levels
+           }
+           else if (sample < signalMin)
+           {
+              signalMin = sample;  // save just the min levels
+           }
+        }
+     }
+     peakToPeak = signalMax - signalMin;  // max - min = peak-peak amplitude
+     volts = (peakToPeak * 5.0) / 1024;  // convert to volts
+}
+
